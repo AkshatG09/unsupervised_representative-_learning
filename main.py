@@ -699,23 +699,6 @@ def train_model(model: NeuralDecodingFramework, train_loader: DataLoader,
 
 
 def main():
-
-        # Create data loaders with appropriate num_workers
-    train_loader = DataLoader(
-        train_data, 
-        batch_size=config['batch_size'], 
-        shuffle=True,
-        num_workers=4,  # Adjust based on your system
-        pin_memory=True  # Additional optimization for GPU training
-    )
-    val_loader = DataLoader(
-        val_data, 
-        batch_size=config['batch_size'], 
-        shuffle=False,
-        num_workers=4,  # Adjust based on your system
-        pin_memory=True
-    )
-
     """
     Main execution function demonstrating the complete neural decoding pipeline.
     """
@@ -790,8 +773,21 @@ def main():
     )
     
     # Create data loaders
-    train_loader = DataLoader(train_data, batch_size=config['batch_size'], shuffle=True)
-    val_loader = DataLoader(val_data, batch_size=config['batch_size'], shuffle=False)
+            # Create data loaders with appropriate num_workers
+    train_loader = DataLoader(
+        train_data, 
+        batch_size=config['batch_size'], 
+        shuffle=True,
+        num_workers=4,  # Adjust based on your system
+        pin_memory=True  # Additional optimization for GPU training
+    )
+    val_loader = DataLoader(
+        val_data, 
+        batch_size=config['batch_size'], 
+        shuffle=False,
+        num_workers=4,  # Adjust based on your system
+        pin_memory=True
+    )
     
     # 3. Initialize model
     print("\n3. Initializing neural decoding framework...")
