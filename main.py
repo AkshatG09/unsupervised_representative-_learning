@@ -67,42 +67,108 @@ class NeuralSpikeSimulator:
         return baseline
     
     def add_stimulus_response(self, baseline: torch.Tensor, 
-                            stimulus_times: List[int],
-                            stimulus_labels: List[int]) -> torch.Tensor:
+                          stimulus_times: List[int],
+                          stimulus_labels: List[int]) -> torch.Tensor:
         """Add stimulus-evoked responses to baseline activity."""
         enhanced = baseline.clone()
-        
+
         for stim_time, label in zip(stimulus_times, stimulus_labels):
-            # Different regions respond differently to stimuli
-            response_pattern = self._get_response_pattern(label)
-            
-            # Add response with realistic temporal dynamics
-            for subj in range(self.n_subjects):
-                for region in range(self.n_regions):
-                    if response_pattern[region] > 0:
-                        # Response window: 50-200ms post-stimulus
-                        start_time = stim_time + 50
-                        end_time = min(stim_time + 200, self.time_steps)
-                        
-                        if start_time < self.time_steps:
-                            # Gaussian response profile
-                            response_strength = response_pattern[region] * (
-                                0.8 + 0.4 * torch.rand(1)
-                            )
-                            
-                            time_indices = torch.arange(start_time, end_time)
-                            response_curve = torch.exp(
-                                -0.5 * ((time_indices - stim_time - 100) / 30) ** 2
-                            )
-                            
-                            for t_idx, t in enumerate(time_indices):
-                                if t < self.time_steps:
-                                    prob_boost = response_strength * response_curve[t_idx] * self.dt
-                                    enhanced[subj, region, :, t] += torch.bernoulli(
-                                        prob_boost * torch.ones(self.n_neurons)
-                                    )
-        
+            if self._is_valid_stimulus_time(stim_time):
+                response_pattern = self._get_response_pattern(label)
+                stimulus_response = self._generate_single_stimulus_response(
+                    response_pattern, stim_time
+                )
+                enhanced += stimulus_response
+
         return torch.clamp(enhanced, 0, 1)
+
+
+    def _is_valid_stimulus_time(self, stim_time: int) -> bool:
+        """Check if stimulus time allows for valid response window."""
+        return stim_time + 50 < self.time_steps
+    
+    def _generate_single_stimulus_response(self, response_pattern: torch.Tensor, 
+                                         stim_time: int) -> torch.Tensor:
+        """Generate response for a single stimulus across all subjects and regions."""
+        response = torch.zeros(self.n_subjects, self.n_regions, 
+                              self.n_neurons, self.time_steps)
+        
+        # Calculate time window once
+        start_time, end_time, time_indices = self._get_response_time_window(stim_time)
+        response_curve = self._calculate_gaussian_response_curve(time_indices, stim_time)
+        
+        # Vectorized processing for all subjects and regions
+        for subj in range(self.n_subjects):
+            active_regions = self._get_active_regions(response_pattern)
+            response[subj] = self._apply_regional_responses(
+                active_regions, response_pattern, response_curve, 
+                start_time, end_time, time_indices
+            )
+        
+        return response
+    
+    def _get_response_time_window(self, stim_time: int) -> Tuple[int, int, torch.Tensor]:
+        """Calculate response time window and indices."""
+        start_time = stim_time + 50
+        end_time = min(stim_time + 200, self.time_steps)
+        time_indices = torch.arange(start_time, end_time)
+        return start_time, end_time, time_indices
+    
+    def _calculate_gaussian_response_curve(self, time_indices: torch.Tensor, 
+                                         stim_time: int) -> torch.Tensor:
+        """Calculate Gaussian response profile."""
+        return torch.exp(-0.5 * ((time_indices - stim_time - 100) / 30) ** 2)
+    
+    def _get_active_regions(self, response_pattern: torch.Tensor) -> torch.Tensor:
+        """Get indices of regions that respond to stimulus."""
+        return torch.nonzero(response_pattern > 0, as_tuple=True)[0]
+    
+    def _apply_regional_responses(self, active_regions: torch.Tensor,
+                                response_pattern: torch.Tensor,
+                                response_curve: torch.Tensor,
+                                start_time: int, end_time: int,
+                                time_indices: torch.Tensor) -> torch.Tensor:
+        """Apply responses to active regions using vectorization."""
+        regional_response = torch.zeros(self.n_regions, self.n_neurons, self.time_steps)
+        
+        for region_idx in active_regions:
+            region_response = self._generate_region_response(
+                region_idx.item(), response_pattern, response_curve, 
+                start_time, end_time, time_indices
+            )
+            regional_response[region_idx] = region_response
+        
+        return regional_response
+    
+    def _generate_region_response(self, region_idx: int, 
+                                response_pattern: torch.Tensor,
+                                response_curve: torch.Tensor,
+                                start_time: int, end_time: int,
+                                time_indices: torch.Tensor) -> torch.Tensor:
+        """Generate response for a single region."""
+        region_response = torch.zeros(self.n_neurons, self.time_steps)
+        
+        # Calculate response strength with variability
+        response_strength = self._calculate_response_strength(response_pattern[region_idx])
+        
+        # Vectorized probability calculation
+        valid_times = time_indices[time_indices < self.time_steps]
+        valid_curve = response_curve[:len(valid_times)]
+        
+        prob_boosts = response_strength * valid_curve * self.dt
+        
+        # Apply responses to all neurons at once
+        for t_idx, t in enumerate(valid_times):
+            region_response[:, t] = torch.bernoulli(
+                prob_boosts[t_idx] * torch.ones(self.n_neurons)
+            )
+        
+        return region_response
+    
+    def _calculate_response_strength(self, base_strength: float) -> float:
+        """Calculate response strength with subject variability."""
+        return base_strength * (0.8 + 0.4 * torch.rand(1).item())
+
     
     def _get_response_pattern(self, stimulus_label: int) -> torch.Tensor:
         """Define region-specific response patterns for different stimuli."""
