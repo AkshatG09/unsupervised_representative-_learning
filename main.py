@@ -39,7 +39,7 @@ class NeuralSpikeSimulator:
 
     def __init__(self, n_subjects: int = 10, n_regions: int = 8, 
                  n_neurons: int = 64, time_steps: int = 1000):
-        # Input validation - Fix 1: Replace assert with individual if-raise statements
+        # Input validation - maintain original dependency chain
         if n_subjects <= 0:
             raise ValueError("Number of subjects must be greater than 0.")
         if n_regions <= 0:
@@ -49,6 +49,7 @@ class NeuralSpikeSimulator:
         if time_steps <= 0:
             raise ValueError("Number of time steps must be greater than 0.")
         
+        # Preserve original assignment order
         self.n_subjects = n_subjects
         self.n_regions = n_regions
         self.n_neurons = n_neurons
@@ -57,14 +58,15 @@ class NeuralSpikeSimulator:
 
     def generate_baseline_activity(self) -> torch.Tensor:
         """Generate baseline spontaneous activity."""
-        # Poisson process with region-specific firing rates
+        # Maintain linear dataflow: compute rates first, then baseline tensor
         base_rates = torch.linspace(2.0, 8.0, self.n_regions)  # Hz
         baseline = torch.zeros(self.n_subjects, self.n_regions,
                               self.n_neurons, self.time_steps)
 
+        # Preserve nested loop structure to maintain dataflow dependencies
         for subj in range(self.n_subjects):
             for region in range(self.n_regions):
-                # Subject-specific variability (±20%)
+                # Compute subject-specific rate, then probability, then activity
                 subj_rate = base_rates[region] * (0.8 + 0.4 * torch.rand(1))
                 prob = subj_rate * self.dt
                 baseline[subj, region] = torch.bernoulli(
@@ -77,149 +79,119 @@ class NeuralSpikeSimulator:
                               stimulus_times: List[int],
                               stimulus_labels: List[int]) -> torch.Tensor:
         """Add stimulus-evoked responses to baseline activity."""
-        # Fix 2: Replace assert with if-raise statements
+        # Preserve input validation order
         if not isinstance(baseline, torch.Tensor):
             raise TypeError("Baseline must be a torch.Tensor.")
         if len(stimulus_times) != len(stimulus_labels):
             raise ValueError("Stimulus times and labels must have the same length.")
 
+        # Initialize enhanced data from baseline to preserve dependency
         enhanced = baseline.clone()
 
+        # Process stimuli in sequence to maintain temporal dependencies
         for stim_time, label in zip(stimulus_times, stimulus_labels):
-            # Fix 3: Add helper method and use it instead of inline assert
             if not self._is_valid_stimulus_time(stim_time):
                 raise ValueError(f"Stimulus time {stim_time} is invalid.")
             
+            # Compute response pattern first, then generate response
             response_pattern = self._get_response_pattern(label)
-            # Fix 5: Replace inline generation with decomposed method call
-            stimulus_response = self._generate_single_stimulus_response(
-                response_pattern, stim_time
-            )
+            stimulus_response = self._generate_stimulus_response(response_pattern, stim_time)
             enhanced += stimulus_response
 
         return torch.clamp(enhanced, 0, 1)
 
-    # Fix 3: Add missing helper method
     def _is_valid_stimulus_time(self, stim_time: int) -> bool:
         """Check if stimulus time allows for valid response window."""
-        return stim_time + 50 < self.time_steps
+        # More permissive validation - let the response generation handle edge cases
+        return stim_time >= 0 and stim_time < self.time_steps
 
-    # Fix 6: Add missing decomposed helper methods for dataflow improvement
-    def _generate_single_stimulus_response(self, response_pattern: torch.Tensor,
-                                         stim_time: int) -> torch.Tensor:
+
+    def _generate_stimulus_response(self, response_pattern: torch.Tensor,
+                                   stim_time: int) -> torch.Tensor:
         """Generate response for a single stimulus across all subjects and regions."""
+        # Initialize response tensor first
         response = torch.zeros(self.n_subjects, self.n_regions,
                               self.n_neurons, self.time_steps)
 
-        # Calculate time window once
-        start_time, end_time, time_indices = self._get_response_time_window(stim_time)
-        response_curve = self._calculate_gaussian_response_curve(time_indices, stim_time)
+        # Compute time window parameters in sequence
+        start_time = stim_time + 50
+        end_time = min(stim_time + 200, self.time_steps)
+        
+        # Handle edge case where start_time >= time_steps
+        if start_time >= self.time_steps:
+            return response
+            
+        time_indices = torch.arange(start_time, end_time)
+        
+        # Handle empty time indices
+        if len(time_indices) == 0:
+            return response
+            
+        response_curve = torch.exp(-0.5 * ((time_indices - stim_time - 100) / 30) ** 2)
 
-        # Vectorized processing for all subjects and regions
+        # Process subjects and regions maintaining dependency order
         for subj in range(self.n_subjects):
-            active_regions = self._get_active_regions(response_pattern)
-            response[subj] = self._apply_regional_responses(
-                active_regions, response_pattern, response_curve,
-                start_time, end_time, time_indices
-            )
+            for region in range(self.n_regions):
+                if response_pattern[region] > 0:
+                    # Compute response strength, then apply to time window
+                    response_strength = response_pattern[region] * (0.8 + 0.4 * torch.rand(1).item())
+                    
+                    # Apply response curve to valid time indices
+                    valid_indices = time_indices[time_indices < self.time_steps]
+                    valid_curve = response_curve[:len(valid_indices)]
+                    
+                    for t_idx, t in enumerate(valid_indices):
+                        prob_boost = response_strength * valid_curve[t_idx] * self.dt
+                        response[subj, region, :, t] = torch.bernoulli(
+                            prob_boost * torch.ones(self.n_neurons)
+                        )
 
         return response
 
-    def _get_response_time_window(self, stim_time: int) -> Tuple[int, int, torch.Tensor]:
-        """Calculate response time window and indices."""
-        start_time = stim_time + 50
-        end_time = min(stim_time + 200, self.time_steps)
-        time_indices = torch.arange(start_time, end_time)
-        return start_time, end_time, time_indices
-
-    def _calculate_gaussian_response_curve(self, time_indices: torch.Tensor,
-                                         stim_time: int) -> torch.Tensor:
-        """Calculate Gaussian response profile."""
-        return torch.exp(-0.5 * ((time_indices - stim_time - 100) / 30) ** 2)
-
-    def _get_active_regions(self, response_pattern: torch.Tensor) -> torch.Tensor:
-        """Get indices of regions that respond to stimulus."""
-        return torch.nonzero(response_pattern > 0, as_tuple=True)[0]
-
-    def _apply_regional_responses(self, active_regions: torch.Tensor,
-                                response_pattern: torch.Tensor,
-                                response_curve: torch.Tensor,
-                                start_time: int, end_time: int,
-                                time_indices: torch.Tensor) -> torch.Tensor:
-        """Apply responses to active regions using vectorization."""
-        regional_response = torch.zeros(self.n_regions, self.n_neurons, self.time_steps)
-
-        for region_idx in active_regions:
-            region_response = self._generate_region_response(
-                region_idx.item(), response_pattern, response_curve,
-                start_time, end_time, time_indices
-            )
-            regional_response[region_idx] = region_response
-
-        return regional_response
-
-    def _generate_region_response(self, region_idx: int,
-                                response_pattern: torch.Tensor,
-                                response_curve: torch.Tensor,
-                                start_time: int, end_time: int,
-                                time_indices: torch.Tensor) -> torch.Tensor:
-        """Generate response for a single region."""
-        region_response = torch.zeros(self.n_neurons, self.time_steps)
-
-        # Calculate response strength with variability
-        response_strength = self._calculate_response_strength(response_pattern[region_idx])
-
-        # Vectorized probability calculation
-        valid_times = time_indices[time_indices < self.time_steps]
-        valid_curve = response_curve[:len(valid_times)]
-
-        prob_boosts = response_strength * valid_curve * self.dt
-
-        # Apply responses to all neurons at once
-        for t_idx, t in enumerate(valid_times):
-            region_response[:, t] = torch.bernoulli(
-                prob_boosts[t_idx] * torch.ones(self.n_neurons)
-            )
-
-        return region_response
-
-    def _calculate_response_strength(self, base_strength: float) -> float:
-        """Calculate response strength with subject variability."""
-        return base_strength * (0.8 + 0.4 * torch.rand(1).item())
-
     def _get_response_pattern(self, stimulus_label: int) -> torch.Tensor:
         """Define region-specific response patterns for different stimuli."""
-        # Fix 4: Replace assert with if-raise statements
         if not isinstance(stimulus_label, int):
             raise TypeError("Stimulus label must be an integer.")
         if stimulus_label < 0 or stimulus_label > 3:
             raise ValueError("Stimulus label must be between 0 and 3.")
 
+        # Define patterns maintaining consistent ordering
         patterns = {
             0: torch.tensor([0.5, 0.3, 0.8, 0.2, 0.1, 0.4, 0.6, 0.3]),  # Visual pattern A
             1: torch.tensor([0.3, 0.6, 0.4, 0.7, 0.2, 0.5, 0.3, 0.8]),  # Visual pattern B
             2: torch.tensor([0.7, 0.2, 0.5, 0.3, 0.8, 0.1, 0.4, 0.6]),  # Visual pattern C
             3: torch.tensor([0.2, 0.8, 0.3, 0.6, 0.4, 0.7, 0.1, 0.5]),  # Visual pattern D
         }
-        return patterns.get(stimulus_label, torch.zeros(self.n_regions))
+        # Ensure pattern matches number of regions
+        pattern = patterns.get(stimulus_label, torch.zeros(self.n_regions))
+        if len(pattern) != self.n_regions:
+            # Resize pattern to match n_regions
+            if len(pattern) > self.n_regions:
+                pattern = pattern[:self.n_regions]
+            else:
+                # Pad with zeros if pattern is shorter
+                padded = torch.zeros(self.n_regions)
+                padded[:len(pattern)] = pattern
+                pattern = padded
+        return pattern
 
     def add_noise_and_degradation(self, spike_data: torch.Tensor) -> torch.Tensor:
         """Add realistic noise and signal degradation."""
+        # Initialize noisy data from input to preserve flow
         noisy_data = spike_data.clone()
 
-        # Electrode noise (false positives/negatives)
+        # Define noise parameters first
         false_positive_rate = 0.02
         false_negative_rate = 0.05
 
-        # False positives
+        # Apply false positives, then false negatives in sequence
         noise_mask = torch.bernoulli(false_positive_rate * torch.ones_like(spike_data))
         noisy_data = torch.clamp(noisy_data + noise_mask, 0, 1)
 
-        # False negatives
         dropout_mask = torch.bernoulli((1 - false_negative_rate) * torch.ones_like(spike_data))
         noisy_data = noisy_data * dropout_mask
 
-        # Temporal jitter (±2ms)
+        # Apply temporal jitter as final step
         jittered_data = torch.zeros_like(noisy_data)
         for subj in range(self.n_subjects):
             for region in range(self.n_regions):
@@ -254,7 +226,7 @@ class TransformerEncoder(nn.Module):
 
     def __init__(self, input_dim: int, d_model: int = 256, nhead: int = 8, 
                  num_layers: int = 4, dropout: float = 0.1):
-        # Fix 7: Replace assert with individual if-raise statements
+        # Validate parameters in dependency order
         if input_dim <= 0:
             raise ValueError("Input dimension must be greater than 0.")
         if d_model <= 0:
@@ -267,9 +239,15 @@ class TransformerEncoder(nn.Module):
             raise ValueError("Dropout must be between 0 and 1.")
 
         super().__init__()
+        
+        # Store dimensions
+        self.d_model = d_model
+        
+        # Initialize components in dependency order
         self.input_projection = nn.Linear(input_dim, d_model)
         self.positional_encoding = self._create_positional_encoding(d_model)
 
+        # Create encoder layer first, then full transformer
         encoder_layer = nn.TransformerEncoderLayer(
             d_model=d_model,
             nhead=nhead,
@@ -282,12 +260,13 @@ class TransformerEncoder(nn.Module):
 
     def _create_positional_encoding(self, d_model: int, max_len: int = 5000) -> nn.Parameter:
         """Create sinusoidal positional encoding."""
+        # Compute encoding components in sequence
         pe = torch.zeros(max_len, d_model)
         position = torch.arange(0, max_len).unsqueeze(1).float()
-
         div_term = torch.exp(torch.arange(0, d_model, 2).float() *
                            -(np.log(10000.0) / d_model))
 
+        # Apply sin/cos to alternating dimensions
         pe[:, 0::2] = torch.sin(position * div_term)
         pe[:, 1::2] = torch.cos(position * div_term)
 
@@ -303,15 +282,16 @@ class TransformerEncoder(nn.Module):
         Returns:
             Encoded features [batch, sequence_length, d_model]
         """
+        # Extract dimensions first
         batch_size, seq_len, _ = x.shape
 
-        # Project to model dimension
+        # Project input to model dimension
         x = self.input_projection(x)
 
-        # Add positional encoding
+        # Add positional encoding to projected input
         x = x + self.positional_encoding[:, :seq_len, :]
 
-        # Apply transformer layers
+        # Apply transformer layers, then normalization
         x = self.transformer(x)
         x = self.layer_norm(x)
 
@@ -323,16 +303,20 @@ class GraphNeuralNetwork(nn.Module):
     Graph neural network for modeling inter-regional connectivity.
     """
 
-    def __init__(self, node_features: int, hidden_dim: int = 128, num_layers: int = 3):
+    def __init__(self, node_features: int, hidden_dim: int = 128, num_layers: int = 3, n_regions: int = 8):
         super().__init__()
         self.num_layers = num_layers
+        self.n_regions = n_regions
+        self.hidden_dim = hidden_dim
 
+        # Create node embedding layers in sequence
         self.node_embeddings = nn.ModuleList([
             nn.Linear(node_features if i == 0 else hidden_dim, hidden_dim)
             for i in range(num_layers)
         ])
 
-        self.edge_weights = nn.Parameter(torch.randn(8, 8))  # 8x8 connectivity matrix
+        # Initialize edge weights with proper dimensions
+        self.edge_weights = nn.Parameter(torch.randn(n_regions, n_regions))
         self.dropout = nn.Dropout(0.1)
 
     def forward(self, node_features: torch.Tensor) -> torch.Tensor:
@@ -345,17 +329,35 @@ class GraphNeuralNetwork(nn.Module):
         Returns:
             Updated node features [batch, num_regions, hidden_dim]
         """
+        # Extract dimensions first
         batch_size, num_regions, _ = node_features.shape
 
-        # Normalize adjacency matrix
-        adj_matrix = torch.softmax(self.edge_weights, dim=-1)
+        # Ensure edge weights match the actual number of regions
+        if self.edge_weights.size(0) != num_regions:
+            # Resize edge weights if needed
+            current_size = self.edge_weights.size(0)
+            if num_regions > current_size:
+                # Pad with random values
+                new_weights = torch.randn(num_regions, num_regions, device=self.edge_weights.device)
+                new_weights[:current_size, :current_size] = self.edge_weights
+                self.edge_weights = nn.Parameter(new_weights)
+            else:
+                # Truncate
+                self.edge_weights = nn.Parameter(self.edge_weights[:num_regions, :num_regions])
 
+        # Normalize adjacency matrix once
+        adj_matrix = torch.softmax(self.edge_weights[:num_regions, :num_regions], dim=-1)
+
+        # Initialize processing with input features
         x = node_features
+        
+        # Apply layers sequentially maintaining dataflow
         for layer in range(self.num_layers):
-            # Message passing
-            messages = torch.matmul(adj_matrix, x)
+            # Compute messages using current features and adjacency matrix
+            # adj_matrix: (num_regions, num_regions), x: (batch, num_regions, features)
+            messages = torch.bmm(adj_matrix.unsqueeze(0).expand(batch_size, -1, -1), x)
 
-            # Update node features
+            # Update features using messages
             x = self.node_embeddings[layer](messages)
             x = F.relu(x)
             x = self.dropout(x)
@@ -372,7 +374,7 @@ class VAEDecoder(nn.Module):
         super().__init__()
         self.latent_dim = latent_dim
 
-        # Reconstruction branch
+        # Initialize reconstruction branch first
         self.reconstruction_layers = nn.Sequential(
             nn.Linear(latent_dim, 512),
             nn.ReLU(),
@@ -384,7 +386,7 @@ class VAEDecoder(nn.Module):
             nn.Sigmoid()
         )
 
-        # Classification branch
+        # Initialize classification branch second
         self.classification_layers = nn.Sequential(
             nn.Linear(latent_dim, 256),
             nn.ReLU(),
@@ -406,6 +408,7 @@ class VAEDecoder(nn.Module):
             reconstruction: Reconstructed data [batch, output_dim]
             classification: Class logits [batch, num_classes]
         """
+        # Compute reconstruction and classification in parallel (no dependencies)
         reconstruction = self.reconstruction_layers(z)
         classification = self.classification_layers(z)
 
@@ -420,11 +423,13 @@ class NeuralDecodingFramework(nn.Module):
     def __init__(self, n_regions: int = 8, n_neurons: int = 64,
                  time_window: int = 200, num_classes: int = 4):
         super().__init__()
+        
+        # Store dimensions first
         self.n_regions = n_regions
         self.n_neurons = n_neurons
         self.time_window = time_window
 
-        # Components
+        # Initialize components in dependency order
         self.transformer = TransformerEncoder(
             input_dim=n_regions * n_neurons,
             d_model=256,
@@ -435,14 +440,19 @@ class NeuralDecodingFramework(nn.Module):
         self.gnn = GraphNeuralNetwork(
             node_features=n_neurons,
             hidden_dim=128,
-            num_layers=3
+            num_layers=3,
+            n_regions=n_regions
         )
 
-        # Latent space
+        # Define latent dimension after components
         self.latent_dim = 128
+        
+        # Create latent space layers with dynamic input size
+        # transformer output: 256, gnn output: 128
         self.mu_layer = nn.Linear(256 + 128, self.latent_dim)
         self.logvar_layer = nn.Linear(256 + 128, self.latent_dim)
 
+        # Initialize decoder last
         self.decoder = VAEDecoder(
             latent_dim=self.latent_dim,
             output_dim=n_regions * n_neurons * time_window,
@@ -460,22 +470,21 @@ class NeuralDecodingFramework(nn.Module):
             mu: Mean of latent distribution
             logvar: Log variance of latent distribution
         """
+        # Extract dimensions first
         batch_size, regions, neurons, time_steps = x.shape
 
-        # Prepare data for transformer (temporal modeling)
+        # Process temporal features first
         x_temporal = x.view(batch_size, time_steps, regions * neurons)
         temporal_features = self.transformer(x_temporal)
         temporal_pooled = torch.mean(temporal_features, dim=1)
 
-        # Prepare data for GNN (spatial modeling)
-        x_spatial = torch.mean(x, dim=-1)
-        spatial_features = self.gnn(x_spatial)
-        spatial_pooled = torch.mean(spatial_features, dim=1)
+        # Process spatial features second
+        x_spatial = torch.mean(x, dim=-1)  # Average over time: (batch, regions, neurons)
+        spatial_features = self.gnn(x_spatial)  # (batch, regions, hidden_dim)
+        spatial_pooled = torch.mean(spatial_features, dim=1)  # (batch, hidden_dim)
 
-        # Combine features
+        # Combine features, then compute latent parameters
         combined = torch.cat([temporal_pooled, spatial_pooled], dim=1)
-
-        # Latent parameters
         mu = self.mu_layer(combined)
         logvar = self.logvar_layer(combined)
 
@@ -483,6 +492,7 @@ class NeuralDecodingFramework(nn.Module):
 
     def reparameterize(self, mu: torch.Tensor, logvar: torch.Tensor) -> torch.Tensor:
         """Reparameterization trick for VAE."""
+        # Compute std and eps first, then sample
         std = torch.exp(0.5 * logvar)
         eps = torch.randn_like(std)
         return mu + eps * std
@@ -497,8 +507,13 @@ class NeuralDecodingFramework(nn.Module):
         Returns:
             Dictionary containing all outputs
         """
+        # Encode input to latent space
         mu, logvar = self.encode(x)
+        
+        # Sample from latent space
         z = self.reparameterize(mu, logvar)
+        
+        # Decode to outputs
         reconstruction, classification = self.decoder(z)
 
         return {
@@ -515,6 +530,7 @@ class NeuralDataset(Dataset):
 
     def __init__(self, spike_data: torch.Tensor, labels: torch.Tensor,
                  time_window: int = 200):
+        # Store parameters in dependency order
         self.spike_data = spike_data
         self.labels = labels
         self.time_window = time_window
@@ -523,11 +539,11 @@ class NeuralDataset(Dataset):
         return len(self.spike_data)
 
     def __getitem__(self, idx):
-        # Extract time window around stimulus
+        # Extract data and label first
         data = self.spike_data[idx]
         label = self.labels[idx]
 
-        # Random time window for data augmentation
+        # Apply time window extraction if needed
         if data.shape[-1] > self.time_window:
             start_idx = torch.randint(0, data.shape[-1] - self.time_window + 1, (1,)).item()
             data = data[..., start_idx:start_idx + self.time_window]
@@ -549,17 +565,15 @@ def compute_loss(outputs: Dict[str, torch.Tensor], targets: torch.Tensor,
     Returns:
         Dictionary of losses
     """
-    # Reconstruction loss
+    # Compute individual loss components first
     recon_loss = F.mse_loss(outputs['reconstruction'], targets.view(targets.shape[0], -1))
 
-    # KL divergence
     kl_loss = -0.5 * torch.sum(1 + outputs['logvar'] - outputs['mu'].pow(2) - outputs['logvar'].exp())
     kl_loss /= targets.shape[0] * targets.numel() // targets.shape[0]
 
-    # Classification loss
     class_loss = F.cross_entropy(outputs['classification'], labels)
 
-    # Total loss
+    # Combine losses
     total_loss = recon_loss + beta * kl_loss + class_loss
 
     return {
@@ -574,23 +588,42 @@ class RealTimeDecoder:
     """Real-time neural decoder for online applications."""
 
     def __init__(self, model: NeuralDecodingFramework, time_window: int = 200):
+        # Initialize components in dependency order
         self.model = model
         self.model.eval()
         self.time_window = time_window
         self.device = next(model.parameters()).device
+        
+        # Initialize buffer with correct dimensions
         self.buffer = torch.zeros(1, model.n_regions, model.n_neurons, time_window, device=self.device)
         self.buffer_idx = 0
 
     def update_buffer(self, new_data: torch.Tensor):
         """Update circular buffer with new neural data."""
-        self.buffer[:, :, :, self.buffer_idx] = new_data.to(self.device)
+        # Move data to device first, then update buffer
+        device_data = new_data.to(self.device)
+        
+        # Ensure new_data has correct shape
+        if device_data.dim() == 2:  # (regions, neurons)
+            device_data = device_data.unsqueeze(0)  # Add batch dimension
+        elif device_data.dim() == 3:  # (batch, regions, neurons)
+            pass  # Already correct
+        else:
+            raise ValueError(f"Expected new_data to have 2 or 3 dimensions, got {device_data.dim()}")
+            
+        self.buffer[:, :, :, self.buffer_idx] = device_data[0]  # Take first batch item
         self.buffer_idx = (self.buffer_idx + 1) % self.time_window
 
     def decode(self) -> Tuple[torch.Tensor, float]:
         """Perform real-time decoding."""
         with torch.no_grad():
+            # Get model outputs first
             outputs = self.model(self.buffer)
+            
+            # Compute probabilities from outputs
             probabilities = F.softmax(outputs['classification'], dim=1)
+            
+            # Extract prediction and confidence
             predicted_class = torch.argmax(probabilities, dim=1)
             confidence = torch.max(probabilities, dim=1)[0]
 
@@ -606,9 +639,11 @@ class Visualizer:
     def plot_spike_trains(self, spike_data: torch.Tensor, subject_idx: int = 0,
                          region_idx: int = 0, time_range: Tuple[int, int] = (0, 500)):
         """Plot spike trains for visualization."""
+        # Initialize figure first
         fig, axes = plt.subplots(2, 2, figsize=(15, 10))
         fig.suptitle(f'Neural Spike Trains - Subject {subject_idx}', fontsize=16)
 
+        # Extract data slice for plotting
         start_time, end_time = time_range
         data_slice = spike_data[subject_idx, :, :, start_time:end_time]
 
@@ -635,7 +670,7 @@ class Visualizer:
         ax3 = axes[1, 0]
         regional_activity = torch.mean(data_slice, dim=1)
         im3 = ax3.imshow(regional_activity.cpu().numpy(), aspect='auto', cmap='viridis',
-                       origin='lower', extent=[start_time, end_time, 0, 8])
+                       origin='lower', extent=[start_time, end_time, 0, spike_data.shape[1]])
         ax3.set_xlabel('Time (ms)')
         ax3.set_ylabel('Brain Region')
         ax3.set_title('Regional Activity Heatmap')
@@ -657,8 +692,8 @@ class Visualizer:
     def plot_decoding_accuracy(self, train_accuracies: List[float],
                              val_accuracies: List[float], losses: List[float]):
         """Plot training progress and decoding accuracy."""
+        # Initialize figure and compute epochs
         fig, axes = plt.subplots(1, 3, figsize=(18, 5))
-
         epochs = range(1, len(train_accuracies) + 1)
 
         # Training and validation accuracy
@@ -714,12 +749,14 @@ def train_model(model: NeuralDecodingFramework, train_loader: DataLoader,
     Returns:
         Training history
     """
+    # Initialize training components in dependency order
     device = torch.device('cuda' if torch.cuda.is_available() else 'cpu')
     model.to(device)
 
     optimizer = optim.Adam(model.parameters(), lr=1e-3, weight_decay=1e-5)
     scheduler = optim.lr_scheduler.ReduceLROnPlateau(optimizer, patience=5, factor=0.5)
 
+    # Initialize history tracking
     history = {
         'train_loss': [],
         'val_loss': [],
@@ -738,21 +775,20 @@ def train_model(model: NeuralDecodingFramework, train_loader: DataLoader,
         train_total = 0
 
         for batch_idx, (data, labels) in enumerate(train_loader):
+            # Move data to device first
             data, labels = data.to(device), labels.to(device)
 
+            # Reset gradients, compute outputs, then losses
             optimizer.zero_grad()
             outputs = model(data)
-
-            # Compute losses
             losses = compute_loss(outputs, data, labels, beta=1.0)
+            
+            # Backpropagate and update
             losses['total'].backward()
-
-            # Gradient clipping
             torch.nn.utils.clip_grad_norm_(model.parameters(), max_norm=1.0)
-
             optimizer.step()
 
-            # Statistics
+            # Update statistics
             train_loss += losses['total'].item()
             _, predicted = torch.max(outputs['classification'], 1)
             train_total += labels.size(0)
@@ -766,17 +802,18 @@ def train_model(model: NeuralDecodingFramework, train_loader: DataLoader,
 
         with torch.no_grad():
             for data, labels in val_loader:
+                # Move data and compute outputs
                 data, labels = data.to(device), labels.to(device)
                 outputs = model(data)
-
                 losses = compute_loss(outputs, data, labels, beta=1.0)
-                val_loss += losses['total'].item()
 
+                # Update validation statistics
+                val_loss += losses['total'].item()
                 _, predicted = torch.max(outputs['classification'], 1)
                 val_total += labels.size(0)
                 val_correct += (predicted == labels).sum().item()
 
-        # Calculate metrics
+        # Compute epoch metrics
         train_accuracy = 100 * train_correct / train_total
         val_accuracy = 100 * val_correct / val_total
 
@@ -786,7 +823,7 @@ def train_model(model: NeuralDecodingFramework, train_loader: DataLoader,
         history['train_accuracy'].append(train_accuracy)
         history['val_accuracy'].append(val_accuracy)
 
-        # Learning rate scheduling
+        # Update learning rate
         scheduler.step(val_loss)
 
         # Print progress
@@ -845,13 +882,14 @@ def main():
     # 2. Prepare dataset
     print("\n2. Preparing dataset...")
 
-    # Create labels for each subject and stimulus
+    # Initialize data containers
     labels = []
     data_windows = []
 
+    # Extract windowed data maintaining temporal dependencies
     for subj in range(config['n_subjects']):
         for stim_idx, (stim_time, label) in enumerate(zip(stimulus_times, stimulus_labels)):
-            # Extract window around stimulus (50ms before to 150ms after)
+            # Calculate time window
             start_time = max(0, stim_time - 50)
             end_time = min(config['time_steps'], stim_time + 150)
 
@@ -860,6 +898,7 @@ def main():
                 data_windows.append(window_data)
                 labels.append(label)
 
+    # Convert to tensors
     data_tensor = torch.stack(data_windows)
     labels_tensor = torch.tensor(labels, dtype=torch.long)
 
@@ -932,7 +971,7 @@ def main():
     # Simulate real-time data stream
     print("   Simulating real-time neural stream...")
     for t in range(100):
-        # Simulate new neural data (1ms worth)
+        # Generate new neural data
         new_data = torch.bernoulli(0.02 * torch.ones(1, config['n_regions'], config['n_neurons']))
         rt_decoder.update_buffer(new_data)
 
@@ -947,17 +986,22 @@ def main():
     device = torch.device('cuda' if torch.cuda.is_available() else 'cpu')
     model.to(device)
 
+    # Initialize evaluation counters
     total_correct = 0
     total_samples = 0
 
     with torch.no_grad():
         for data, labels in val_loader:
+            # Move data and compute predictions
             data, labels = data.to(device), labels.to(device)
             outputs = model(data)
             _, predicted = torch.max(outputs['classification'], 1)
+            
+            # Update counters
             total_samples += labels.size(0)
             total_correct += (predicted == labels).sum().item()
 
+    # Compute final accuracy
     final_accuracy = 100 * total_correct / total_samples
     print(f"Final validation accuracy: {final_accuracy:.2f}%")
 
