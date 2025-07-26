@@ -12,9 +12,6 @@ Key Components:
 - Variational autoencoder for reconstruction and classification
 - Real-time decoding capabilities
 - Clinical-grade modular architecture
-
-Author: Neural Interface Research Lab
-Date: July 2025
 """
 
 import torch
@@ -40,8 +37,17 @@ class NeuralSpikeSimulator:
     Generates realistic synthetic neural spike trains with biological constraints.
     """
 
-    def __init__(self, n_subjects: int = 10, n_regions: int = 8,
+    def __init__(self, n_subjects: int = 10, n_regions: int = 8, 
                  n_neurons: int = 64, time_steps: int = 1000):
+        if n_subjects <= 0:
+            raise ValueError("Number of subjects must be greater than 0.")
+        if n_regions <= 0:
+            raise ValueError("Number of regions must be greater than 0.")
+        if n_neurons <= 0:
+            raise ValueError("Number of neurons must be greater than 0.")
+        if time_steps <= 0:
+            raise ValueError("Number of time steps must be greater than 0.")
+
         self.n_subjects = n_subjects
         self.n_regions = n_regions
         self.n_neurons = n_neurons
@@ -66,19 +72,25 @@ class NeuralSpikeSimulator:
 
         return baseline
 
-    def add_stimulus_response(self, baseline: torch.Tensor,
-                          stimulus_times: List[int],
-                          stimulus_labels: List[int]) -> torch.Tensor:
+    def add_stimulus_response(self, baseline: torch.Tensor, 
+                              stimulus_times: List[int],
+                              stimulus_labels: List[int]) -> torch.Tensor:
         """Add stimulus-evoked responses to baseline activity."""
+        if not isinstance(baseline, torch.Tensor):
+            raise TypeError("Baseline must be a torch.Tensor.")
+        if len(stimulus_times) != len(stimulus_labels):
+            raise ValueError("Stimulus times and labels must have the same length.")
+
         enhanced = baseline.clone()
 
         for stim_time, label in zip(stimulus_times, stimulus_labels):
-            if self._is_valid_stimulus_time(stim_time):
-                response_pattern = self._get_response_pattern(label)
-                stimulus_response = self._generate_single_stimulus_response(
-                    response_pattern, stim_time
-                )
-                enhanced += stimulus_response
+            if not self._is_valid_stimulus_time(stim_time):
+                raise ValueError(f"Stimulus time {stim_time} is invalid.")
+            response_pattern = self._get_response_pattern(label)
+            stimulus_response = self._generate_single_stimulus_response(
+                response_pattern, stim_time
+            )
+            enhanced += stimulus_response
 
         return torch.clamp(enhanced, 0, 1)
 
@@ -172,6 +184,11 @@ class NeuralSpikeSimulator:
 
     def _get_response_pattern(self, stimulus_label: int) -> torch.Tensor:
         """Define region-specific response patterns for different stimuli."""
+        if not isinstance(stimulus_label, int):
+            raise TypeError("Stimulus label must be an integer.")
+        if stimulus_label < 0 or stimulus_label > 3:
+            raise ValueError("Stimulus label must be between 0 and 3.")
+
         patterns = {
             0: torch.tensor([0.5, 0.3, 0.8, 0.2, 0.1, 0.4, 0.6, 0.3]),  # Visual pattern A
             1: torch.tensor([0.3, 0.6, 0.4, 0.7, 0.2, 0.5, 0.3, 0.8]),  # Visual pattern B
@@ -229,8 +246,19 @@ class TransformerEncoder(nn.Module):
     Transformer encoder for modeling temporal dynamics in neural signals.
     """
 
-    def __init__(self, input_dim: int, d_model: int = 256, nhead: int = 8,
+    def __init__(self, input_dim: int, d_model: int = 256, nhead: int = 8, 
                  num_layers: int = 4, dropout: float = 0.1):
+        if input_dim <= 0:
+            raise ValueError("Input dimension must be greater than 0.")
+        if d_model <= 0:
+            raise ValueError("Model dimension must be greater than 0.")
+        if nhead <= 0:
+            raise ValueError("Number of heads must be greater than 0.")
+        if num_layers <= 0:
+            raise ValueError("Number of layers must be greater than 0.")
+        if not (0 <= dropout <= 1):
+            raise ValueError("Dropout must be between 0 and 1.")
+
         super().__init__()
         self.input_projection = nn.Linear(input_dim, d_model)
         self.positional_encoding = self._create_positional_encoding(d_model)
