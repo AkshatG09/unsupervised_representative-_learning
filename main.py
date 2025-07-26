@@ -26,7 +26,6 @@ from typing import Tuple, Dict, List, Optional
 import time
 import warnings
 warnings.filterwarnings('ignore', category=RuntimeWarning)
-warnings.filterwarnings('ignore', message='.*MINGW-W64.*')
 
 # Set random seeds for reproducibility
 torch.manual_seed(42)
@@ -283,7 +282,7 @@ class TransformerEncoder(nn.Module):
             Encoded features [batch, sequence_length, d_model]
         """
         # Extract dimensions first
-        batch_size, seq_len, _ = x.shape
+        _, seq_len, _ = x.shape
 
         # Project input to model dimension
         x = self.input_projection(x)
@@ -640,8 +639,8 @@ class Visualizer:
                          region_idx: int = 0, time_range: Tuple[int, int] = (0, 500)):
         """Plot spike trains for visualization."""
         # Initialize figure first
-        fig, axes = plt.subplots(2, 2, figsize=(15, 10))
-        fig.suptitle(f'Neural Spike Trains - Subject {subject_idx}', fontsize=16)
+        _, axes = plt.subplots(2, 2, figsize=(15, 10))
+        _.suptitle('Neural Spike Trains - Subject {}'.format(subject_idx), fontsize=16)
 
         # Extract data slice for plotting
         start_time, end_time = time_range
@@ -669,7 +668,7 @@ class Visualizer:
         # Plot 3: Regional activity heatmap
         ax3 = axes[1, 0]
         regional_activity = torch.mean(data_slice, dim=1)
-        im3 = ax3.imshow(regional_activity.cpu().numpy(), aspect='auto', cmap='viridis',
+        ax3.imshow(regional_activity.cpu().numpy(), aspect='auto', cmap='viridis',
                        origin='lower', extent=[start_time, end_time, 0, spike_data.shape[1]])
         ax3.set_xlabel('Time (ms)')
         ax3.set_ylabel('Brain Region')
@@ -693,7 +692,7 @@ class Visualizer:
                              val_accuracies: List[float], losses: List[float]):
         """Plot training progress and decoding accuracy."""
         # Initialize figure and compute epochs
-        fig, axes = plt.subplots(1, 3, figsize=(18, 5))
+        _, axes = plt.subplots(1, 3, figsize=(18, 5))
         epochs = range(1, len(train_accuracies) + 1)
 
         # Training and validation accuracy
@@ -714,10 +713,10 @@ class Visualizer:
 
         # Confusion matrix
         classes = ['Visual A', 'Visual B', 'Visual C', 'Visual D']
-        cm = np.random.rand(4, 4) * 100
+        cm = np.random.Generator(4, 4) * 100
         cm = cm / cm.sum(axis=1)[:, np.newaxis] * 100
 
-        im = axes[2].imshow(cm, cmap='Blues')
+        axes[2].imshow(cm, cmap='Blues')
         axes[2].set_xticks(range(4))
         axes[2].set_yticks(range(4))
         axes[2].set_xticklabels(classes, rotation=45)
