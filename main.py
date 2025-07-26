@@ -24,9 +24,12 @@ import torch.optim as optim
 from torch.utils.data import Dataset, DataLoader
 import numpy as np
 import matplotlib.pyplot as plt
-from typing import Tuple, Dict, List
+import seaborn as sns
+from typing import Tuple, Dict, List, Optional
+import time
 import warnings
-warnings.filterwarnings('ignore')
+warnings.filterwarnings('ignore', category=RuntimeWarning)
+warnings.filterwarnings('ignore', message='.*MINGW-W64.*')
 
 # Set random seeds for reproducibility
 torch.manual_seed(42)
@@ -696,6 +699,23 @@ def train_model(model: NeuralDecodingFramework, train_loader: DataLoader,
 
 
 def main():
+
+        # Create data loaders with appropriate num_workers
+    train_loader = DataLoader(
+        train_data, 
+        batch_size=config['batch_size'], 
+        shuffle=True,
+        num_workers=4,  # Adjust based on your system
+        pin_memory=True  # Additional optimization for GPU training
+    )
+    val_loader = DataLoader(
+        val_data, 
+        batch_size=config['batch_size'], 
+        shuffle=False,
+        num_workers=4,  # Adjust based on your system
+        pin_memory=True
+    )
+
     """
     Main execution function demonstrating the complete neural decoding pipeline.
     """
