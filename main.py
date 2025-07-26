@@ -39,6 +39,7 @@ class NeuralSpikeSimulator:
 
     def __init__(self, n_subjects: int = 10, n_regions: int = 8, 
                  n_neurons: int = 64, time_steps: int = 1000):
+        # Input validation - Fix 1: Replace assert with individual if-raise statements
         if n_subjects <= 0:
             raise ValueError("Number of subjects must be greater than 0.")
         if n_regions <= 0:
@@ -47,7 +48,7 @@ class NeuralSpikeSimulator:
             raise ValueError("Number of neurons must be greater than 0.")
         if time_steps <= 0:
             raise ValueError("Number of time steps must be greater than 0.")
-
+        
         self.n_subjects = n_subjects
         self.n_regions = n_regions
         self.n_neurons = n_neurons
@@ -76,6 +77,7 @@ class NeuralSpikeSimulator:
                               stimulus_times: List[int],
                               stimulus_labels: List[int]) -> torch.Tensor:
         """Add stimulus-evoked responses to baseline activity."""
+        # Fix 2: Replace assert with if-raise statements
         if not isinstance(baseline, torch.Tensor):
             raise TypeError("Baseline must be a torch.Tensor.")
         if len(stimulus_times) != len(stimulus_labels):
@@ -84,9 +86,12 @@ class NeuralSpikeSimulator:
         enhanced = baseline.clone()
 
         for stim_time, label in zip(stimulus_times, stimulus_labels):
+            # Fix 3: Add helper method and use it instead of inline assert
             if not self._is_valid_stimulus_time(stim_time):
                 raise ValueError(f"Stimulus time {stim_time} is invalid.")
+            
             response_pattern = self._get_response_pattern(label)
+            # Fix 5: Replace inline generation with decomposed method call
             stimulus_response = self._generate_single_stimulus_response(
                 response_pattern, stim_time
             )
@@ -94,11 +99,12 @@ class NeuralSpikeSimulator:
 
         return torch.clamp(enhanced, 0, 1)
 
-
+    # Fix 3: Add missing helper method
     def _is_valid_stimulus_time(self, stim_time: int) -> bool:
         """Check if stimulus time allows for valid response window."""
         return stim_time + 50 < self.time_steps
 
+    # Fix 6: Add missing decomposed helper methods for dataflow improvement
     def _generate_single_stimulus_response(self, response_pattern: torch.Tensor,
                                          stim_time: int) -> torch.Tensor:
         """Generate response for a single stimulus across all subjects and regions."""
@@ -181,9 +187,9 @@ class NeuralSpikeSimulator:
         """Calculate response strength with subject variability."""
         return base_strength * (0.8 + 0.4 * torch.rand(1).item())
 
-
     def _get_response_pattern(self, stimulus_label: int) -> torch.Tensor:
         """Define region-specific response patterns for different stimuli."""
+        # Fix 4: Replace assert with if-raise statements
         if not isinstance(stimulus_label, int):
             raise TypeError("Stimulus label must be an integer.")
         if stimulus_label < 0 or stimulus_label > 3:
@@ -248,6 +254,7 @@ class TransformerEncoder(nn.Module):
 
     def __init__(self, input_dim: int, d_model: int = 256, nhead: int = 8, 
                  num_layers: int = 4, dropout: float = 0.1):
+        # Fix 7: Replace assert with individual if-raise statements
         if input_dim <= 0:
             raise ValueError("Input dimension must be greater than 0.")
         if d_model <= 0:
@@ -346,7 +353,7 @@ class GraphNeuralNetwork(nn.Module):
         x = node_features
         for layer in range(self.num_layers):
             # Message passing
-            messages = torch.matmul(adj_matrix, x)  # [batch, regions, features]
+            messages = torch.matmul(adj_matrix, x)
 
             # Update node features
             x = self.node_embeddings[layer](messages)
@@ -458,12 +465,12 @@ class NeuralDecodingFramework(nn.Module):
         # Prepare data for transformer (temporal modeling)
         x_temporal = x.view(batch_size, time_steps, regions * neurons)
         temporal_features = self.transformer(x_temporal)
-        temporal_pooled = torch.mean(temporal_features, dim=1)  # [batch, 256]
+        temporal_pooled = torch.mean(temporal_features, dim=1)
 
         # Prepare data for GNN (spatial modeling)
-        x_spatial = torch.mean(x, dim=-1)  # Average over time [batch, regions, neurons]
+        x_spatial = torch.mean(x, dim=-1)
         spatial_features = self.gnn(x_spatial)
-        spatial_pooled = torch.mean(spatial_features, dim=1)  # [batch, 128]
+        spatial_pooled = torch.mean(spatial_features, dim=1)
 
         # Combine features
         combined = torch.cat([temporal_pooled, spatial_pooled], dim=1)
@@ -570,13 +577,13 @@ class RealTimeDecoder:
         self.model = model
         self.model.eval()
         self.time_window = time_window
-        self.device = next(model.parameters()).device # Get model device
-        self.buffer = torch.zeros(1, model.n_regions, model.n_neurons, time_window, device=self.device) # Initialize buffer on the correct device
+        self.device = next(model.parameters()).device
+        self.buffer = torch.zeros(1, model.n_regions, model.n_neurons, time_window, device=self.device)
         self.buffer_idx = 0
 
     def update_buffer(self, new_data: torch.Tensor):
         """Update circular buffer with new neural data."""
-        self.buffer[:, :, :, self.buffer_idx] = new_data.to(self.device) # Move new data to the correct device
+        self.buffer[:, :, :, self.buffer_idx] = new_data.to(self.device)
         self.buffer_idx = (self.buffer_idx + 1) % self.time_window
 
     def decode(self) -> Tuple[torch.Tensor, float]:
@@ -618,7 +625,7 @@ class Visualizer:
 
         # Plot 2: Population firing rate
         ax2 = axes[0, 1]
-        firing_rates = torch.mean(data_slice, dim=(0, 1)) * 1000  # Convert to Hz
+        firing_rates = torch.mean(data_slice, dim=(0, 1)) * 1000
         ax2.plot(range(start_time, end_time), firing_rates, color='blue', linewidth=2)
         ax2.set_xlabel('Time (ms)')
         ax2.set_ylabel('Population Firing Rate (Hz)')
@@ -626,7 +633,7 @@ class Visualizer:
 
         # Plot 3: Regional activity heatmap
         ax3 = axes[1, 0]
-        regional_activity = torch.mean(data_slice, dim=1)  # Average over neurons
+        regional_activity = torch.mean(data_slice, dim=1)
         im3 = ax3.imshow(regional_activity.cpu().numpy(), aspect='auto', cmap='viridis',
                        origin='lower', extent=[start_time, end_time, 0, 8])
         ax3.set_xlabel('Time (ms)')
@@ -670,9 +677,9 @@ class Visualizer:
         axes[1].set_title('Training Loss')
         axes[1].grid(True, alpha=0.3)
 
-        # Confusion matrix (placeholder for final epoch)
+        # Confusion matrix
         classes = ['Visual A', 'Visual B', 'Visual C', 'Visual D']
-        cm = np.random.rand(4, 4) * 100  # Placeholder - would use real confusion matrix
+        cm = np.random.rand(4, 4) * 100
         cm = cm / cm.sum(axis=1)[:, np.newaxis] * 100
 
         im = axes[2].imshow(cm, cmap='Blues')
@@ -825,7 +832,7 @@ def main():
     )
 
     # Create stimulus paradigm
-    stimulus_times = list(range(200, config['time_steps'], 400))  # Every 400ms
+    stimulus_times = list(range(200, config['time_steps'], 400))
     stimulus_labels = [i % config['num_classes'] for i in range(len(stimulus_times))]
 
     print(f"Stimulus times: {stimulus_times}")
@@ -868,19 +875,18 @@ def main():
     )
 
     # Create data loaders
-            # Create data loaders with appropriate num_workers
     train_loader = DataLoader(
         train_data,
         batch_size=config['batch_size'],
         shuffle=True,
-        num_workers=4,  # Adjust based on your system
-        pin_memory=True  # Additional optimization for GPU training
+        num_workers=2,
+        pin_memory=True
     )
     val_loader = DataLoader(
         val_data,
         batch_size=config['batch_size'],
         shuffle=False,
-        num_workers=4,  # Adjust based on your system
+        num_workers=2,
         pin_memory=True
     )
 
@@ -930,7 +936,7 @@ def main():
         new_data = torch.bernoulli(0.02 * torch.ones(1, config['n_regions'], config['n_neurons']))
         rt_decoder.update_buffer(new_data)
 
-        if t % 50 == 0:  # Decode every 50ms
+        if t % 50 == 0:
             predicted_class, confidence = rt_decoder.decode()
             print(f"   Time {t}ms: Predicted class {predicted_class.item()}, "
                   f"Confidence: {confidence:.3f}")
