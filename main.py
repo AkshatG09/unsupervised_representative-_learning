@@ -16,7 +16,6 @@ Key Components:
 
 import warnings
 warnings.filterwarnings("ignore", category=RuntimeWarning)
-warnings.filterwarnings("ignore", message=".*MINGW-W64.*")
 
 from typing import Tuple, Dict, List
 import time    # retained: still used in main()
