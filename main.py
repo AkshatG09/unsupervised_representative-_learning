@@ -33,6 +33,10 @@ import seaborn as sns
 torch.manual_seed(42)
 np.random.seed(42)
 
+# Define constants for repeated literals
+TIME_LABEL = 'Time (ms)'
+BRAIN_REGION_LABEL = 'Brain Region'
+
 class NeuralSpikeSimulator:
     """
     Generates realistic synthetic neural spike trains with biological constraints.
@@ -346,8 +350,6 @@ class GraphNeuralNetwork(nn.Module):
         Returns:
             Updated node features [batch, num_regions, hidden_dim]
         """
-        batch_size, num_regions, _ = node_features.shape
-
         # Normalize adjacency matrix
         adj_matrix = torch.softmax(self.edge_weights, dim=-1)
 
@@ -607,8 +609,8 @@ class Visualizer:
     def plot_spike_trains(self, spike_data: torch.Tensor, subject_idx: int = 0,
                          region_idx: int = 0, time_range: Tuple[int, int] = (0, 500)):
         """Plot spike trains for visualization."""
-        fig, axes = plt.subplots(2, 2, figsize=(15, 10))
-        fig.suptitle('Neural Spike Trains - Subject {}'.format(subject_idx), fontsize=16)
+        _, axes = plt.subplots(2, 2, figsize=(15, 10))
+        _.suptitle('Neural Spike Trains - Subject {}'.format(subject_idx), fontsize=16)
 
         start_time, end_time = time_range
         data_slice = spike_data[subject_idx, :, :, start_time:end_time]
@@ -620,7 +622,7 @@ class Visualizer:
             spike_times = torch.nonzero(region_data[neuron_idx], as_tuple=True)[0]
             ax1.scatter(spike_times, [neuron_idx] * len(spike_times),
                        s=1, alpha=0.7, color='black')
-        ax1.set_xlabel('Time (ms)')
+        ax1.set_xlabel(TIME_LABEL)
         ax1.set_ylabel('Neuron ID')
         ax1.set_title('Raster Plot - Region {}'.format(region_idx))
 
@@ -628,7 +630,7 @@ class Visualizer:
         ax2 = axes[0, 1]
         firing_rates = torch.mean(data_slice, dim=(0, 1)) * 1000
         ax2.plot(range(start_time, end_time), firing_rates, color='blue', linewidth=2)
-        ax2.set_xlabel('Time (ms)')
+        ax2.set_xlabel(TIME_LABEL)
         ax2.set_ylabel('Population Firing Rate (Hz)')
         ax2.set_title('Population Activity')
 
@@ -637,8 +639,8 @@ class Visualizer:
         regional_activity = torch.mean(data_slice, dim=1)
         im3 = ax3.imshow(regional_activity.cpu().numpy(), aspect='auto', cmap='viridis',
                        origin='lower', extent=[start_time, end_time, 0, 8])
-        ax3.set_xlabel('Time (ms)')
-        ax3.set_ylabel('Brain Region')
+        ax3.set_xlabel(TIME_LABEL)
+        ax3.set_ylabel(BRAIN_REGION_LABEL)
         ax3.set_title('Regional Activity Heatmap')
         plt.colorbar(im3, ax=ax3, label='Firing Rate')
 
