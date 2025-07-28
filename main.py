@@ -16,6 +16,7 @@ Key Components:
 
 import warnings
 warnings.filterwarnings("ignore", category=RuntimeWarning)
+warnings.filterwarnings("ignore", message=".*MINGW-W64.*")
 
 from typing import Tuple, Dict, List
 import time    # retained: still used in main()
@@ -646,8 +647,8 @@ class Visualizer:
         region_means = torch.mean(data_slice, dim=1)
         correlation_matrix = torch.corrcoef(region_means)
         im4 = ax4.imshow(correlation_matrix.cpu().numpy(), cmap='RdBu_r', vmin=-1, vmax=1)
-        ax4.set_xlabel('Brain Region')
-        ax4.set_ylabel('Brain Region')
+        ax4.set_xlabel(BRAIN_REGION_LABEL)
+        ax4.set_ylabel(BRAIN_REGION_LABEL)
         ax4.set_title('Inter-Regional Correlation')
         plt.colorbar(im4, ax=ax4, label='Correlation')
 
