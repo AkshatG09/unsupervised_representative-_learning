@@ -125,7 +125,7 @@ class NeuralSpikeSimulator:
             active_regions = self._get_active_regions(response_pattern)
             response[subj] = self._apply_regional_responses(
                 active_regions, response_pattern, response_curve,
-                start_time, end_time, time_indices
+                time_indices
             )
 
         return response
@@ -149,7 +149,6 @@ class NeuralSpikeSimulator:
     def _apply_regional_responses(self, active_regions: torch.Tensor,
                                 response_pattern: torch.Tensor,
                                 response_curve: torch.Tensor,
-                                start_time: int, end_time: int,
                                 time_indices: torch.Tensor) -> torch.Tensor:
         """Apply responses to active regions using vectorization."""
         regional_response = torch.zeros(self.n_regions, self.n_neurons, self.time_steps)
@@ -157,7 +156,7 @@ class NeuralSpikeSimulator:
         for region_idx in active_regions:
             region_response = self._generate_region_response(
                 region_idx.item(), response_pattern, response_curve,
-                start_time, end_time, time_indices
+                time_indices
             )
             regional_response[region_idx] = region_response
 
@@ -166,7 +165,6 @@ class NeuralSpikeSimulator:
     def _generate_region_response(self, region_idx: int,
                                 response_pattern: torch.Tensor,
                                 response_curve: torch.Tensor,
-                                start_time: int, end_time: int,
                                 time_indices: torch.Tensor) -> torch.Tensor:
         """Generate response for a single region."""
         region_response = torch.zeros(self.n_neurons, self.time_steps)
